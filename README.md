@@ -2,7 +2,7 @@
 This is a small hashing library fit for quick projects.
 Currently supports: SHA1, SHA224, SHA256, SHA384, SHA512-224, SHA512-256, SHA512, SHA3-224, SHA3-256, SHA3-384, SHA3-512, SHAKE128, and SHAKE256.
 
-```
+```c
 #include <stdio.h>
 #include <ccth.h>
 
