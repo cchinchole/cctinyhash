@@ -6,15 +6,15 @@
 #include <string.h>
 #include "internal/hash.h"
 
+
 typedef struct cc_digest_ctx {
     cc_digest_alg algorithm;
     const cc_digest_ops *operations;
     void *state;
 } cc_digest_ctx;
 
-int8_t cc_digest_size(cc_digest_alg alg)
+int cc_digest_size(cc_digest_alg alg)
 {
-    int8_t len = -1;
     switch(alg)
     {
         case DIGEST_ALG_SHA1:
@@ -40,40 +40,34 @@ int8_t cc_digest_size(cc_digest_alg alg)
             break;
         case DIGEST_ALG_SHAKE128: //Returns -1 naturally someone should be requesting their bytes and KNOWING the output length
         case DIGEST_ALG_SHAKE256:
+            return CCTH_SHAKE_DIGEST_SIZE;
             break;
         default:
             assert(0 && "Unreachable code hit.");
-            break;
+            return CCTH_UNREACHABLE_CODE;
     }
-    return len;
+    return CCTH_UNREACHABLE_CODE;
 }
 
 
 int cc_digest_update(cc_digest_ctx *ctx, const uint8_t *data, size_t len)
 {
-    if (ctx == NULL || ctx->operations == NULL ||
-        ctx->operations->update == NULL ||
-        data == NULL)
-        return -1;
+    if(ctx == NULL || ctx->operations == NULL || ctx->operations->update == NULL)
+        return CCTH_NULL_PTR;
+    if(data == NULL && len > 0)
+        return CCTH_BAD_INPUT;
     return ctx->operations->update(data, len, ctx->state);
 }
 
-int cc_digest_final(cc_digest_ctx *ctx, uint8_t *output)
+int cc_digest_final(cc_digest_ctx *ctx, uint8_t *output, size_t output_len)
 {
-    int ret = -1;
-    if (ctx == NULL || ctx->operations == NULL ||
-        ctx->operations->final == NULL ||
-        output == NULL)
-        return ret;
+    if(ctx == NULL || ctx->operations == NULL || ctx->operations->final == NULL || output == NULL)
+        return CCTH_NULL_PTR;
 
-    ret = ctx->operations->final(output, ctx->state);
+    int ret = ctx->operations->final(output, output_len, ctx->state);
 
-    //TODO: This is hardcoded to -1, if we add other errors will need to correct this
-    //Clean the context for a fresh usage.
-    if(ret >= 0)
-    {
-        ctx->operations->init(ctx->state, ctx->algorithm);
-    }
+    if(ret == CCTH_SUCCESS)
+        return ctx->operations->init(ctx->state, ctx->algorithm);
 
     return ret;
 }
@@ -136,62 +130,42 @@ cc_digest_ctx *cc_new_digest_ctx(cc_digest_alg alg)
     return ctx;
 }
 
-int cc_digest_final_xof(cc_digest_ctx *ctx, uint8_t *output, size_t len)
+int cc_digest_final_xof(cc_digest_ctx *ctx, uint8_t *output, size_t output_len, size_t len)
 {
     int ret = -1;
-    if (ctx == NULL || ctx->operations == NULL ||
+    if(ctx == NULL || ctx->operations == NULL ||
         ctx->operations->final_xof == NULL ||
         output == NULL)
-        return -1;
+        return CCTH_NULL_PTR;
 
-    ret = ctx->operations->final_xof(output, len, ctx->state);
+    if(output_len < len)
+        return CCTH_BAD_OUTPUT;
 
-    //TODO: This is hardcoded to -1, if we add other errors will need to correct this
-    //Clean the context for a fresh usage.
-    if(ret >= 0)
-    {
-        ctx->operations->init(ctx->state, ctx->algorithm);
-    }
+    ret = ctx->operations->final_xof(output, output_len, len, ctx->state);
+
+    if(ret == CCTH_SUCCESS)
+        return ctx->operations->init(ctx->state, ctx->algorithm);
 
     return ret;
 }
 
-int cc_hash(cc_digest_alg alg, const uint8_t *data, size_t len, uint8_t **output, size_t digest_bytes)
+int cc_hash(cc_digest_alg alg, const uint8_t *data, size_t len, uint8_t *output, size_t output_len, size_t digest_bytes)
 {   
-    int ret = -1;
+    bool is_xof = cc_digest_size(alg)==CCTH_SHAKE_DIGEST_SIZE;
+
+    if(output == NULL)
+        return CCTH_NULL_PTR;
+
+    if((data == NULL && len > 0) || (is_xof != (digest_bytes != 0)))
+        return CCTH_BAD_INPUT;
+
     cc_digest_ctx *ctx = cc_new_digest_ctx(alg);
+    if(ctx == NULL)
+         return CCTH_NULL_PTR;
 
-    bool is_xof = cc_digest_size(alg)==-1;
-
-    if (ctx == NULL)
-        return -1;
-
-    if(data == NULL || output == NULL)
-        goto ending;
-
-    if(!is_xof && digest_bytes != 0)
-        goto ending;
-    //TODO: This should likely be an error condition XOF_DIGEST_SIZE_NOT_SET
-    else if(is_xof && digest_bytes == 0)
-        goto ending;
-
-    /* 
-     * Can safely cast cc_digest_size to size_t since we will never reach this point
-     * if it were to hit a failure condition.
-     */
-
-    if(*output == NULL)
-        *output = (uint8_t*)malloc( is_xof ? digest_bytes : (size_t)cc_digest_size(alg));
-
-    //TODO: This should likely be an error condition DIGEST_UPDATE_FAILURE
-    if(cc_digest_update(ctx, data, len) != 0)
-        goto ending;
-
-    if(is_xof)
-        ret = cc_digest_final_xof(ctx, *output, digest_bytes);
-    else
-        ret = cc_digest_final(ctx, *output);
-ending:
+    int ret = cc_digest_update(ctx, data, len);
+    if(ret == CCTH_SUCCESS)
+        ret = is_xof ? cc_digest_final_xof(ctx, output, output_len, digest_bytes) : cc_digest_final(ctx, output, output_len);
     cc_digest_free(ctx);
     return ret;
 }

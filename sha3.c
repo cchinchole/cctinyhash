@@ -78,12 +78,12 @@ CCTH_INT int sha3_init(void *state, cc_digest_alg alg)
         break;
     default:
         assert("unreachable code hit." && 0);
-        return -1;
+        return CCTH_UNREACHABLE_CODE;
     }
 
     memset(&pstate->sponge, 0, sizeof(pstate->sponge));
     pstate->block_cursor = 0;
-    return 0;
+    return CCTH_SUCCESS;
 }
 
 
@@ -116,7 +116,7 @@ CCTH_INT int sha3_keccak_theta(uint64_t sponge[SHA3_SPONGEARR][SHA3_SPONGEARR])
         for (int j = 0; j < SHA3_SPONGEARR; j++)
             sponge[j][i] ^= D;
     }
-    return 0;
+    return CCTH_SUCCESS;
 }
 
 CCTH_INT int sha3_keccak_rho_pi(uint64_t B[SHA3_SPONGEARR][SHA3_SPONGEARR],
@@ -146,14 +146,14 @@ CCTH_INT int sha3_keccak_chi(uint64_t B[SHA3_SPONGEARR][SHA3_SPONGEARR],
         for (int j = 0; j < SHA3_SPONGEARR; j++)
             sponge[j][i] = B[j][i] ^ (~B[j][(i + 1) % 5] & B[j][(i + 2) % 5]);
 
-    return 0;
+    return CCTH_SUCCESS;
 }
 
 CCTH_INT int sha3_keccak_iota(uint64_t *spongeOrigin, int iteration)
 {
     /* A[0,0] ^= RC */
     *spongeOrigin ^= SHA3_RC_K[iteration];
-    return 0;
+    return CCTH_SUCCESS;
 }
 
 CCTH_INT int sha3_keccakf(uint64_t sponge[SHA3_SPONGEARR][SHA3_SPONGEARR])
@@ -169,16 +169,16 @@ CCTH_INT int sha3_keccakf(uint64_t sponge[SHA3_SPONGEARR][SHA3_SPONGEARR])
         sha3_keccak_chi(B, sponge);
         sha3_keccak_iota(&sponge[0][0], i);
     }
-    return 0;
+    return CCTH_SUCCESS;
 }
 
 CCTH_INT int sha3_update(const uint8_t *data, size_t len, void *state)
 {
-    sha3_state *pstate = (sha3_state*)state;
-    if (data == NULL)
-        return -1;
-    if (len == 0)
-        return 0;
+    sha3_state *pstate = state;
+
+    if (data == NULL && len!=0)
+        return CCTH_BAD_INPUT;
+
     for (size_t i = 0; i < len; i++)
     {
         pstate->sponge.bytes[pstate->block_cursor++] ^= ((const uint8_t *)data)[i];
@@ -191,15 +191,20 @@ CCTH_INT int sha3_update(const uint8_t *data, size_t len, void *state)
     return 0;
 }
 
-CCTH_INT int sha3_final(uint8_t *output, void *state)
+CCTH_INT int sha3_final(uint8_t *output, size_t output_len, void *state)
 {
     if(output == NULL || state == NULL)
-        return -1;
+        return CCTH_BAD_INPUT;
+
     sha3_state *pstate = (sha3_state*)state;
 
     /* This is a check for SHAKE functions being passed */
     if(pstate->digest_bytes==0)
-        return -1;
+        return CCTH_BAD_ALGORITHM;
+
+    if(output_len < pstate->digest_bytes)
+        return CCTH_BAD_OUTPUT;
+
 
     /* Padding and setting the last bits to 11 */
     pstate->sponge.bytes[pstate->block_cursor] ^= 0x06;
@@ -211,31 +216,35 @@ CCTH_INT int sha3_final(uint8_t *output, void *state)
         ((uint8_t *)output)[i] = pstate->sponge.bytes[i];
     }
 
-    return pstate->digest_bytes;
+    return CCTH_SUCCESS;
 }
 
 CCTH_INT int sha3_xof(void *state)
 {
     if(state == NULL)
-        return -1;
+        return CCTH_NULL_PTR;
+
     sha3_state *pstate = (sha3_state*)state;
     pstate->sponge.bytes[pstate->block_cursor] ^= 0x1F;
     pstate->sponge.bytes[pstate->r - 1] ^= 0x80;
     sha3_keccakf(pstate->sponge.words);
     pstate->block_cursor = 0;
-    return 0;
+    return CCTH_SUCCESS;
 }
 
-CCTH_INT int sha3_shake_final(uint8_t *output, size_t len, void *state)
+CCTH_INT int sha3_shake_final(uint8_t *output, size_t output_len, size_t len, void *state)
 {
-    if (output == NULL || len <= 0)
-        return -1;
+    if(state == NULL)
+        return CCTH_NULL_PTR;
+
+    if(output == NULL || len==0 || (output_len < len))
+        return CCTH_BAD_OUTPUT;
 
     sha3_state *pstate = (sha3_state*)state;
 
     /* This is a check for non-SHAKE functions being passed */
     if(pstate->digest_bytes!=0)
-        return -1;
+        return CCTH_BAD_ALGORITHM;
 
     size_t j = pstate->block_cursor;
     for (size_t i = 0; i < len; i++)
@@ -249,18 +258,19 @@ CCTH_INT int sha3_shake_final(uint8_t *output, size_t len, void *state)
     }
 
     pstate->block_cursor = j;
-    return 0;
+    return CCTH_SUCCESS;
 }
 
-CCTH_INT int sha3_xof_final(uint8_t *output, size_t len, void *state)
+CCTH_INT int sha3_xof_final(uint8_t *output, size_t output_len, size_t len, void *state)
 {
-    if (output == NULL || len <= 0)
-        return -1;
+    if(state == NULL)
+        return CCTH_NULL_PTR;
+    if (output == NULL || (output_len < len) || len == 0)
+        return CCTH_BAD_OUTPUT;
     if(((sha3_state*)state)->digest_bytes!=0)
-        return -1;
-    if(sha3_xof(state)<0)
-        return -1;
-    return sha3_shake_final(output, len, state);
+        return CCTH_BAD_ALGORITHM;
+    sha3_xof(state); /* Already check the state previously, safe to assume this will always succeed */
+    return sha3_shake_final(output, output_len, len, state);
 }
 
 const cc_digest_ops cc_sha3_ops = {

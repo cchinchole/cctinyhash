@@ -32,6 +32,9 @@ typedef struct sha512_state{
 
 CCTH_INT int sha512_init(void *state, cc_digest_alg alg)
 {
+    if(state == NULL)
+        return CCTH_NULL_PTR;
+
     sha512_state *pstate = state;
     switch (alg) {
     case DIGEST_ALG_SHA512_224:
@@ -52,14 +55,14 @@ CCTH_INT int sha512_init(void *state, cc_digest_alg alg)
         break;
     default:
         assert("Unreachable code" && 0);
-        return -1;
+        return CCTH_UNREACHABLE_CODE;
     }
     memset(pstate->block, 0, SHA512_BLOCK_SIZE);
     pstate->msg_length[0] = 0;
     pstate->msg_length[1] = 0;
     pstate->block_cursor = 0;
 
-    return 0;
+    return CCTH_SUCCESS;
 }
 
 
@@ -88,6 +91,9 @@ CCTH_INT uint64_t sigma1_512(uint64_t x)
 
 CCTH_INT int sha512_process(void *state)
 {
+    if(state == NULL)
+        return CCTH_NULL_PTR;
+
     sha512_state *pstate = state;
     /* Using non circular queue this time */
     uint64_t W[SHA512_ROUNDS];
@@ -143,11 +149,17 @@ CCTH_INT int sha512_process(void *state)
     pstate->h[6] += g;
     pstate->h[7] += h;
 
-    return 0;
+    return CCTH_SUCCESS;
 }
 
 CCTH_INT int sha512_update(const uint8_t *data, size_t len, void *state)
 {
+    if(state == NULL)
+        return CCTH_NULL_PTR;
+
+    if(data == NULL && len!=0)
+        return CCTH_BAD_INPUT;
+
     sha512_state *pstate = state;
 
     uint64_t carry = len * 8;
@@ -179,14 +191,19 @@ CCTH_INT int sha512_update(const uint8_t *data, size_t len, void *state)
             pstate->block_cursor = 0;
         }
     }
-    return 0;
+    return CCTH_SUCCESS;
 }
 
-CCTH_INT int sha512_final(uint8_t *output, void *state) 
+CCTH_INT int sha512_final(uint8_t *output, size_t output_len, void *state) 
 {
     if(output == NULL || state == NULL)
-        return -1;
+        return CCTH_NULL_PTR;
+
     sha512_state *pstate = state;
+
+    if(output_len < pstate->digest_size)
+        return CCTH_BAD_OUTPUT;
+
     /* Set the first bit to 1 (0b10000000) */
     pstate->block[pstate->block_cursor++] = 0x80;
 
@@ -229,7 +246,7 @@ CCTH_INT int sha512_final(uint8_t *output, void *state)
             *(output++) = (uint8_t)(pstate->h[i] >> (56-8*j));
             remaining--;
         }
-    return pstate->digest_size;
+    return CCTH_SUCCESS;
 }
 
 const cc_digest_ops cc_sha512_ops = {

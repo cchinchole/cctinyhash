@@ -16,8 +16,8 @@ typedef struct cc_digest_ops {
     size_t  state_size;
     int     (*init)     (void *state, cc_digest_alg alg);
     int     (*update)   (const uint8_t *data, size_t len, void *state);
-    int     (*final)    (uint8_t *output, void *state);
-    int     (*final_xof)(uint8_t *output, size_t len, void *state);
+    int     (*final)    (uint8_t *output, size_t output_len, void *state);
+    int     (*final_xof)(uint8_t *output, size_t output_len, size_t len, void *state);
 } cc_digest_ops;
 
 extern const cc_digest_ops cc_sha1_ops;

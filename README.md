@@ -17,20 +17,13 @@ void print_arr(uint8_t *array, size_t length)
 int main()
 {
     uint8_t input[] = {'H', 'e', 'l', 'l', 'o',',',' ', 'W', 'o', 'r', 'l', 'd', '!'};
-    uint8_t *output = NULL;
-    int hash_size = 0;
-    if((hash_size = cc_hash(DIGEST_ALG_SHA256, input, sizeof(input), &output, 0))<0)
-        printf("Failed to hash!");
-
-    /*
-        If you were using an XOF function then the return on cc_hash will be 0
-    */
-
-    if(hash_size > 0)
+    uint8_t output[cc_digest_size(DIGEST_ALG_SHA256)];
+    if(cc_hash(DIGEST_ALG_SHA256, input, sizeof(input), output, sizeof(output), 0) != CC_SUCCESS)
     {
-        print_arr(output, hash_size);
+        printf("Failed to hash!");
+        return -1;
     }
-    free(output);
+    print_arr(output, sizeof(output));
     return 0;
 }
 

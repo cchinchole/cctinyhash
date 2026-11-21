@@ -1,14 +1,16 @@
 #include "internal/hash.h"
+#include "include/ccth.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdbool.h>
+#include <assert.h>
 
 #define SHA1_BLOCK_SIZE  64
 #define SHA1_DIGEST_SIZE 20
 #define SHA1_NUM_WORDS 16
 #define SHA1_ROUNDS 80
 #define SHA1_MASK 0x0000000f
-#define SHA1_LEN_BYTES sizeof(uint64_t)
 #define SHA1_ROTL(value, bits)                                                 \
     (((value) << (bits)) | ((value) >> (sizeof(uint32_t) * 8 - (bits))))
 
@@ -38,7 +40,10 @@ CCTH_INT uint32_t sha1_f(uint32_t x, uint32_t y, uint32_t z, int t)
     else if (t <= 79)
         return cc_parity(x, y, z);
     else
-        return -1;
+    {
+        assert(0&&"SHA1_F receieved invalid t");
+        return CCTH_UNREACHABLE_CODE;
+    }
 }
 
 CCTH_INT uint32_t sha1_k(int t)
@@ -60,12 +65,15 @@ CCTH_INT int sha1_init(void *state, cc_digest_alg alg)
     /* Will ignore the algorithm for sha1 */
     (void)alg;
 
+    if(state == NULL)
+        return CCTH_NULL_PTR;
+
     sha1_state *pstate = state;
     memcpy(pstate->h, sha1_h, sizeof(sha1_h));
     memset(pstate->block, 0, SHA1_BLOCK_SIZE);
     pstate->msg_length   = 0;
     pstate->block_cursor = 0;
-    return 0;
+    return CCTH_SUCCESS;
 }
 
 CCTH_INT int sha1_process(void *state)
@@ -118,17 +126,22 @@ CCTH_INT int sha1_process(void *state)
     pstate->h[2] += c;
     pstate->h[3] += d;
     pstate->h[4] += e;
-    return 0;
+    return CCTH_SUCCESS;
 }
 
 CCTH_INT int sha1_update(const uint8_t *data, size_t len, void *state)
 {
-    if(data == NULL || state == NULL)
-        return -1;
-    sha1_state *pstate = (sha1_state*)state;
+    if(state == NULL)
+        return CCTH_NULL_PTR;
+
+    if(data == NULL && len!=0)
+        return CCTH_BAD_INPUT;
+
+    sha1_state *pstate = state;
     /* Make sure the bits are not exceeding 2^64 */
+    //TODO: Perhaps this should be an unique error?
     if(len > (UINT64_MAX - pstate->msg_length)/8)
-        return -1;
+        return CCTH_BAD_INPUT;
 
     /* Clear the block with 0's then copy up to 64 bytes of a message into the
      * block. If we hit 64 then process this message and continue. */
@@ -143,13 +156,17 @@ CCTH_INT int sha1_update(const uint8_t *data, size_t len, void *state)
             pstate->block_cursor = 0;
         }
     }
-    return 0;
+    return CCTH_SUCCESS;
 }
 
-CCTH_INT int sha1_final(uint8_t *output, void *state)
+CCTH_INT int sha1_final(uint8_t *output, size_t output_len, void *state)
 {
     if(output == NULL || state == NULL)
-        return -1;
+        return CCTH_NULL_PTR;
+
+    if(output_len < SHA1_DIGEST_SIZE)
+        return CCTH_BAD_OUTPUT;
+
     sha1_state *pstate = state;
 
     /* Set the first bit to 1 (0b10000000) */
@@ -187,7 +204,8 @@ CCTH_INT int sha1_final(uint8_t *output, void *state)
         *(output++) = pstate->h[i] >> 8;
         *(output++) = pstate->h[i];
     }
-    return SHA1_DIGEST_SIZE;
+
+    return CCTH_SUCCESS;
 }
 
 const cc_digest_ops cc_sha1_ops = {

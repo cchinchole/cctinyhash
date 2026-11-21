@@ -11,8 +11,6 @@
 #define SHA256_DIGEST_SIZE  256/8
 #define SHA256_NUM_WORDS 16
 #define SHA256_ROUNDS 64
-#define SHA256_MASK 0x0000000f
-#define SHA256_LEN_BYTES sizeof(uint64_t)
 #define SHA256_ROTR(value, bits)                                               \
     (((value) >> (bits)) | ((value) << (sizeof(uint32_t) * 8 - (bits))))
 #define SHA256_SHR(value, bits) ((value) >> bits)
@@ -32,6 +30,9 @@ typedef struct sha256_state{
 
 CCTH_INT int sha256_init(void *state, cc_digest_alg alg)
 {
+    if(state == NULL)
+        return CCTH_NULL_PTR;
+
     sha256_state *pstate = state;
 
     switch(alg)
@@ -46,12 +47,12 @@ CCTH_INT int sha256_init(void *state, cc_digest_alg alg)
             break;
         default:
             assert("Unreachable code was hit.\n" && 0);
-            return -1;
+            return CCTH_UNREACHABLE_CODE;
     }
     memset(pstate->block, 0, SHA256_BLOCK_SIZE);
     pstate->msg_length = 0;
     pstate->block_cursor = 0;
-    return 0;
+    return CCTH_SUCCESS;
 }
 
 
@@ -78,6 +79,9 @@ CCTH_INT uint32_t sigma1_256(uint32_t x)
 
 CCTH_INT int sha256_process(void *state)
 {
+    if(state==NULL)
+        return CCTH_NULL_PTR;
+
     sha256_state *pstate = state;
 
     /* Using circular queue schedular in accordance to FIPS 180-4 6.1.3 */
@@ -135,17 +139,20 @@ CCTH_INT int sha256_process(void *state)
     pstate->h[5] += f;
     pstate->h[6] += g;
     pstate->h[7] += h;
-    return 0;
+    return CCTH_SUCCESS;
 }
 
 CCTH_INT int sha256_update(const uint8_t *data, size_t len, void *state)
 {
-    if(data == NULL || state == NULL)
-        return -1;
+    if(state == NULL)
+        return CCTH_NULL_PTR;
+    if(data==NULL && len !=0)
+        return CCTH_BAD_INPUT;
+
     sha256_state* pstate = state;
     /* Make sure the bits are not exceeding 2^64 */
     if(len > (UINT64_MAX - pstate->msg_length)/8)
-        return -1;
+        return CCTH_BAD_INPUT;
 
     /* Clear the block with 0's then copy up to 64 bytes of a message into the
      * block. If we hit 64 then process this message and continue. */
@@ -160,14 +167,18 @@ CCTH_INT int sha256_update(const uint8_t *data, size_t len, void *state)
             pstate->block_cursor = 0;
         }
     }
-    return 0;
+    return CCTH_SUCCESS;
 }
 
-CCTH_INT int sha256_final(uint8_t *output, void *state)
+CCTH_INT int sha256_final(uint8_t *output, size_t output_len, void *state)
 {
     if(output == NULL || state == NULL)
-        return -1;
+        return CCTH_NULL_PTR;
+
     sha256_state* pstate = state;
+
+    if(output_len < pstate->digest_size)
+        return CCTH_BAD_OUTPUT;
 
     /* Set the first bit to 1 (0b10000000) */
     pstate->block[pstate->block_cursor++] = 0x80;
@@ -203,7 +214,7 @@ CCTH_INT int sha256_final(uint8_t *output, void *state)
         *(output++) = pstate->h[i] >> 8;
         *(output++) = pstate->h[i];
     }
-    return pstate->digest_size;
+    return CCTH_SUCCESS;
 }
 
 const cc_digest_ops cc_sha256_ops = {

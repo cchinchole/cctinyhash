@@ -16,7 +16,7 @@ int main()
     cc_digest_update(ctx, input, sizeof(input));
 
     //Note this will return the size of the digest on success and -1 on failure.
-    if(cc_digest_final(ctx, output)>0)
+    if(cc_digest_final(ctx, output, sizeof(output))==CCTH_SUCCESS)
     {
         print_arr(output, sizeof(output));
     }
@@ -31,7 +31,7 @@ int main()
     ctx = cc_new_digest_ctx(DIGEST_ALG_SHAKE128);
     cc_digest_update(ctx, input, sizeof(input));
 
-    if(cc_digest_final_xof(ctx, shake_output, 256)==0)
+    if(cc_digest_final_xof(ctx, shake_output, sizeof(shake_output), 256)==CCTH_SUCCESS)
     {
         print_arr(shake_output, 256);
     }

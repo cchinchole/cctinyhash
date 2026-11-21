@@ -9,24 +9,18 @@ void run_test_digest(cc_digest_alg alg)
 {
     int ret = -1;
     uint8_t test_bytes[5] = {0x00, 0x01, 0x02, 0x03, 0x04};
-    uint8_t *output_data=NULL;
-    bool is_xof = false;
-    switch(alg)
-    {
-        case DIGEST_ALG_SHAKE128:
-        case DIGEST_ALG_SHAKE256:
-            ret = cc_hash(alg, test_bytes, sizeof(test_bytes), &output_data, XOF_SIZE);
-            is_xof = true;
-            break;
-        default:
-            ret = cc_hash(alg, test_bytes, sizeof(test_bytes), &output_data, 0);
-            break;
-    }
-    if(ret < 0)
+    bool is_xof = cc_digest_size(alg)==CCTH_SHAKE_DIGEST_SIZE;
+    uint8_t *output_data=malloc( is_xof ? XOF_SIZE  : cc_digest_size(alg));
+    if(is_xof)
+        ret = cc_hash(alg, test_bytes, sizeof(test_bytes), output_data, XOF_SIZE, XOF_SIZE);
+    else
+        ret = cc_hash(alg, test_bytes, sizeof(test_bytes), output_data, cc_digest_size(alg), 0);
+
+    if(ret != CCTH_SUCCESS)
         printf("Failed to perform digest algorithm: %d\n", ret);
     else
     {
-        for (int i = 0; i < (is_xof ? XOF_SIZE : ret); ++i)
+        for (int i = 0; i < (is_xof ? XOF_SIZE : cc_digest_size(alg)); ++i)
             printf("%02x", output_data[i]);
         printf("\n");
     }
