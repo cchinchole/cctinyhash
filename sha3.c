@@ -1,5 +1,5 @@
-#include "ccth.h"
-#include "hash.h"
+#include "include/ccth.h"
+#include "internal/hash.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -10,16 +10,8 @@
 #define SHA3_SPONGEARR   5 /* 25 / 5*/
 #define KECCAKF_ROUNDS  24
 
-//#define SHA3_ROTL(x, y) (((x) << (y)) | ((x) >> ((sizeof(uint64_t) * 8) - (y))))
-
-static uint64_t SHA3_ROTL(uint64_t x, unsigned int n)
-{
-    n &= 63;
-    return n ? ((x << n) | (x >> (64 - n))) : x;
-}
-
 /* Table 2 Keccak, Table 2 SP202 */
-uint64_t SHA3_RHO_K[5][5] = {
+CCTH_INT const uint64_t SHA3_RHO_K[5][5] = {
     {0, 1, 190, 28, 91},   /* starting from j = 0, i = 0 then j = 0, i = 1 */
     {36, 300, 6, 55, 276}, /* starting from j = 1, i = 0 then j = 1, i = 1 */
     {3, 10, 171, 153, 231},
@@ -27,7 +19,7 @@ uint64_t SHA3_RHO_K[5][5] = {
     {210, 66, 253, 120, 78}};
 
 /* Table 1 Keccak */
-uint64_t SHA3_RC_K[24] = {
+CCTH_INT const uint64_t SHA3_RC_K[24] = {
     0x0000000000000001, 0x0000000000008082, 0x800000000000808A,
     0x8000000080008000, 0x000000000000808B, 0x0000000080000001,
     0x8000000080008081, 0x8000000000008009, 0x000000000000008A,
@@ -36,6 +28,12 @@ uint64_t SHA3_RC_K[24] = {
     0x8000000000008003, 0x8000000000008002, 0x8000000000000080,
     0x000000000000800A, 0x800000008000000A, 0x8000000080008081,
     0x8000000000008080, 0x0000000080000001, 0x8000000080008008};
+
+CCTH_INT uint64_t SHA3_ROTL(uint64_t x, unsigned int n)
+{
+    n &= 63;
+    return n ? ((x << n) | (x >> (64 - n))) : x;
+}
 
 typedef struct sha3_state{
     size_t block_cursor;
@@ -49,51 +47,43 @@ typedef struct sha3_state{
 
 } sha3_state;
 
-sha3_state *sha3_create_state(digest_alg alg)
+CCTH_INT int sha3_init(void *state, cc_digest_alg alg)
 {
-    sha3_state *state = malloc(sizeof(sha3_state));
-    if(state == NULL)
-    {
-        printf("Failed to create state.\n");
-        return NULL;
-    }
-
+    sha3_state *pstate = state;
     switch (alg)
     {
     case DIGEST_ALG_SHA3_224:
-        state->digest_bytes = 224 / 8;
-        state->r = 144;
+        pstate->digest_bytes = 224 / 8;
+        pstate->r = 144;
         break;
     case DIGEST_ALG_SHA3_256:
-        state->digest_bytes = 256 / 8;
-        state->r = 136;
+        pstate->digest_bytes = 256 / 8;
+        pstate->r = 136;
         break;
     case DIGEST_ALG_SHA3_384:
-        state->digest_bytes = 384 / 8;
-        state->r = 104;
+        pstate->digest_bytes = 384 / 8;
+        pstate->r = 104;
         break;
     case DIGEST_ALG_SHA3_512:
-        state->digest_bytes = 512 / 8;
-        state->r = 72;
+        pstate->digest_bytes = 512 / 8;
+        pstate->r = 72;
         break;
     case DIGEST_ALG_SHAKE128:
-        state->digest_bytes = 0;
-        state->r = 168;
+        pstate->digest_bytes = 0;
+        pstate->r = 168;
         break;
     case DIGEST_ALG_SHAKE256:
-        state->digest_bytes = 0;
-        state->r = 136;
+        pstate->digest_bytes = 0;
+        pstate->r = 136;
         break;
     default:
-        state->digest_bytes = 0;
         assert("unreachable code hit." && 0);
-        break;
+        return -1;
     }
 
-    memset(&state->sponge, 0, sizeof(state->sponge));
-    state->block_cursor = 0;
-
-    return state;
+    memset(&pstate->sponge, 0, sizeof(pstate->sponge));
+    pstate->block_cursor = 0;
+    return 0;
 }
 
 
@@ -102,7 +92,7 @@ Keccak functions were made using SP202 description and keccak's pseudo code for
 computational math.
 */
 
-int sha3_keccak_theta(uint64_t sponge[SHA3_SPONGEARR][SHA3_SPONGEARR])
+CCTH_INT int sha3_keccak_theta(uint64_t sponge[SHA3_SPONGEARR][SHA3_SPONGEARR])
 {
     uint64_t C[SHA3_SPONGEARR];
 
@@ -129,7 +119,7 @@ int sha3_keccak_theta(uint64_t sponge[SHA3_SPONGEARR][SHA3_SPONGEARR])
     return 0;
 }
 
-int sha3_keccak_rho_pi(uint64_t B[SHA3_SPONGEARR][SHA3_SPONGEARR],
+CCTH_INT int sha3_keccak_rho_pi(uint64_t B[SHA3_SPONGEARR][SHA3_SPONGEARR],
                         uint64_t sponge[SHA3_SPONGEARR][SHA3_SPONGEARR])
 {
     /* RHO and PI are done in the same loop for optimization. */
@@ -146,7 +136,7 @@ int sha3_keccak_rho_pi(uint64_t B[SHA3_SPONGEARR][SHA3_SPONGEARR],
     return 0;
 }
 
-int sha3_keccak_chi(uint64_t B[SHA3_SPONGEARR][SHA3_SPONGEARR],
+CCTH_INT int sha3_keccak_chi(uint64_t B[SHA3_SPONGEARR][SHA3_SPONGEARR],
                    uint64_t sponge[SHA3_SPONGEARR][SHA3_SPONGEARR])
 {
     /* A'[x,y,z] = A[x,y,z] ^  ((A[ (x+1) mod 5,y,z ] ^ 1) * A[ (x+2) mod 5,y,z
@@ -159,16 +149,16 @@ int sha3_keccak_chi(uint64_t B[SHA3_SPONGEARR][SHA3_SPONGEARR],
     return 0;
 }
 
-int sha3_keccak_iota(uint64_t *spongeOrigin, int iteration)
+CCTH_INT int sha3_keccak_iota(uint64_t *spongeOrigin, int iteration)
 {
     /* A[0,0] ^= RC */
     *spongeOrigin ^= SHA3_RC_K[iteration];
     return 0;
 }
 
-int sha3_keccakf(uint64_t sponge[SHA3_SPONGEARR][SHA3_SPONGEARR])
+CCTH_INT int sha3_keccakf(uint64_t sponge[SHA3_SPONGEARR][SHA3_SPONGEARR])
 {
-    uint64_t t, C[SHA3_SPONGEARR], B[SHA3_SPONGEARR][SHA3_SPONGEARR];
+    uint64_t B[SHA3_SPONGEARR][SHA3_SPONGEARR];
 
     memset(B, 0, SHA3_WORDS * sizeof(uint64_t));
 
@@ -182,10 +172,10 @@ int sha3_keccakf(uint64_t sponge[SHA3_SPONGEARR][SHA3_SPONGEARR])
     return 0;
 }
 
-int sha3_update(uint8_t *data, size_t len, void *state)
+CCTH_INT int sha3_update(const uint8_t *data, size_t len, void *state)
 {
     sha3_state *pstate = (sha3_state*)state;
-    if (!data)
+    if (data == NULL)
         return -1;
     if (len == 0)
         return 0;
@@ -201,27 +191,32 @@ int sha3_update(uint8_t *data, size_t len, void *state)
     return 0;
 }
 
-int sha3_final(uint8_t *data, void *state)
+CCTH_INT int sha3_final(uint8_t *output, void *state)
 {
-    if(!data || !state)
+    if(output == NULL || state == NULL)
         return -1;
     sha3_state *pstate = (sha3_state*)state;
+
+    /* This is a check for SHAKE functions being passed */
+    if(pstate->digest_bytes==0)
+        return -1;
+
     /* Padding and setting the last bits to 11 */
     pstate->sponge.bytes[pstate->block_cursor] ^= 0x06;
     pstate->sponge.bytes[pstate->r - 1] ^= 0x80;
     sha3_keccakf(pstate->sponge.words);
 
-    for (int i = 0; i < pstate->digest_bytes; i++)
+    for (uint8_t i = 0; i < pstate->digest_bytes; i++)
     {
-        ((uint8_t *)data)[i] = pstate->sponge.bytes[i];
+        ((uint8_t *)output)[i] = pstate->sponge.bytes[i];
     }
 
     return pstate->digest_bytes;
 }
 
-int sha3_xof(void *state)
+CCTH_INT int sha3_xof(void *state)
 {
-    if(!state)
+    if(state == NULL)
         return -1;
     sha3_state *pstate = (sha3_state*)state;
     pstate->sponge.bytes[pstate->block_cursor] ^= 0x1F;
@@ -231,12 +226,18 @@ int sha3_xof(void *state)
     return 0;
 }
 
-int sha3_shake_final(uint8_t *data, size_t len, void *state)
+CCTH_INT int sha3_shake_final(uint8_t *output, size_t len, void *state)
 {
-    if (!data || len <= 0)
+    if (output == NULL || len <= 0)
         return -1;
+
     sha3_state *pstate = (sha3_state*)state;
-    int j = pstate->block_cursor;
+
+    /* This is a check for non-SHAKE functions being passed */
+    if(pstate->digest_bytes!=0)
+        return -1;
+
+    size_t j = pstate->block_cursor;
     for (size_t i = 0; i < len; i++)
     {
         if (j >= pstate->r)
@@ -244,18 +245,28 @@ int sha3_shake_final(uint8_t *data, size_t len, void *state)
             sha3_keccakf(pstate->sponge.words);
             j = 0;
         }
-        ((uint8_t *)data)[i] = pstate->sponge.bytes[j++];
+        ((uint8_t *)output)[i] = pstate->sponge.bytes[j++];
     }
 
     pstate->block_cursor = j;
-    return len;
+    return 0;
 }
 
-int sha3_xof_final(uint8_t *data, size_t len, void *state)
+CCTH_INT int sha3_xof_final(uint8_t *output, size_t len, void *state)
 {
-    if (!data || len <= 0)
+    if (output == NULL || len <= 0)
+        return -1;
+    if(((sha3_state*)state)->digest_bytes!=0)
         return -1;
     if(sha3_xof(state)<0)
         return -1;
-    return sha3_shake_final(data, len, state);
+    return sha3_shake_final(output, len, state);
 }
+
+const cc_digest_ops cc_sha3_ops = {
+    .state_size = sizeof(sha3_state),
+    .init = sha3_init,
+    .update = sha3_update,
+    .final = sha3_final,
+    .final_xof = sha3_xof_final,
+};

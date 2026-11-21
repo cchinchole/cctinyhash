@@ -5,21 +5,32 @@ Currently supports: SHA1, SHA224, SHA256, SHA384, SHA512-224, SHA512-256, SHA512
 ```c
 #include <stdio.h>
 #include <ccth.h>
+#include <stdlib.h>
 
+void print_arr(uint8_t *array, size_t length)
+{
+    for (size_t i = 0; i < length; ++i)
+        printf("%02x", array[i]);
+    printf("\n");
+}
 
 int main()
 {
     uint8_t input[] = {'H', 'e', 'l', 'l', 'o',',',' ', 'W', 'o', 'r', 'l', 'd', '!'};
-    uint8_t output[cc_digest_size(DIGEST_ALG_SHA512)];
-    digest_ctx *ctx = cc_new_digest_ctx(DIGEST_ALG_SHA512);
-    cc_digest_update(ctx, input, sizeof(input));
-    cc_digest_final(ctx, output); //Note this will return the size of the digest on success and -1 on failure.
-    cc_digest_free(ctx);
+    uint8_t *output = NULL;
+    int hash_size = 0;
+    if((hash_size = cc_hash(DIGEST_ALG_SHA256, input, sizeof(input), &output, 0))<0)
+        printf("Failed to hash!");
 
-    ctx = cc_new_digest_ctx(DIGEST_ALG_SHAKE128);
-    cc_digest_update(ctx, input, sizeof(input));
-    cc_digest_final_xof(ctx, output, cc_digest_size(DIGEST_ALG_SHA512)); //The output length is in bytes for XOF functions. Copying the 512 to fit within same buffer.
-    cc_digest_free(ctx);
+    /*
+        If you were using an XOF function then the return on cc_hash will be 0
+    */
+
+    if(hash_size > 0)
+    {
+        print_arr(output, hash_size);
+    }
+    free(output);
     return 0;
 }
 

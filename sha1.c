@@ -1,4 +1,4 @@
-#include "hash.h"
+#include "internal/hash.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -12,7 +12,6 @@
 #define SHA1_ROTL(value, bits)                                                 \
     (((value) << (bits)) | ((value) >> (sizeof(uint32_t) * 8 - (bits))))
 
-/******** Sha 1 vtable ********/
 static const uint32_t sha1_h[5] = {
     0x67452301,
     0xefcdab89,
@@ -28,42 +27,21 @@ typedef struct sha1_state{
     size_t block_cursor;
 } sha1_state;
 
-sha1_state *sha1_create_state()
-{
-    sha1_state *state = malloc(sizeof(sha1_state));
-    if(state == NULL)
-    {
-        printf("Failed to create state.\n");
-        return NULL;
-    }
-
-    memcpy(state->h, sha1_h, sizeof(sha1_h));
-    memset(state->block, 0, SHA1_BLOCK_SIZE);
-    state->msg_length = 0;
-    state->block_cursor = 0;
-
-    return state;
-}
-
-/******** End Sha 1 vtable ********/
-
-
-
-uint32_t sha1_f(uint32_t x, uint32_t y, uint32_t z, int t)
+CCTH_INT uint32_t sha1_f(uint32_t x, uint32_t y, uint32_t z, int t)
 {
     if (t <= 19)
-        return ch(x, y, z);
+        return cc_ch(x, y, z);
     else if (t <= 39)
-        return parity(x, y, z);
+        return cc_parity(x, y, z);
     else if (t <= 59)
-        return maj(x, y, z);
+        return cc_maj(x, y, z);
     else if (t <= 79)
-        return parity(x, y, z);
+        return cc_parity(x, y, z);
     else
         return -1;
 }
 
-uint32_t sha1_k(int t)
+CCTH_INT uint32_t sha1_k(int t)
 {
     if (t <= 19)
         return 0x5a827999;
@@ -77,7 +55,20 @@ uint32_t sha1_k(int t)
         return -1;
 }
 
-int sha1_process(void *state)
+CCTH_INT int sha1_init(void *state, cc_digest_alg alg)
+{
+    /* Will ignore the algorithm for sha1 */
+    (void)alg;
+
+    sha1_state *pstate = state;
+    memcpy(pstate->h, sha1_h, sizeof(sha1_h));
+    memset(pstate->block, 0, SHA1_BLOCK_SIZE);
+    pstate->msg_length   = 0;
+    pstate->block_cursor = 0;
+    return 0;
+}
+
+CCTH_INT int sha1_process(void *state)
 {
     sha1_state *pstate = (sha1_state*)state;
     /* Using circular queue schedular in accordance to FIPS 180-4 6.1.3 */
@@ -102,7 +93,7 @@ int sha1_process(void *state)
     /* Step 3: Loop 80 rounds */
     for (int t = 0; t < SHA1_ROUNDS; t++)
     {
-        uint s = t & SHA1_MASK;
+        uint32_t s = t & SHA1_MASK;
 
         if (t >= 16)
         {
@@ -130,9 +121,9 @@ int sha1_process(void *state)
     return 0;
 }
 
-int sha1_update(uint8_t *data, size_t len, void *state)
+CCTH_INT int sha1_update(const uint8_t *data, size_t len, void *state)
 {
-    if(!data || !state)
+    if(data == NULL || state == NULL)
         return -1;
     sha1_state *pstate = (sha1_state*)state;
     /* Make sure the bits are not exceeding 2^64 */
@@ -155,11 +146,11 @@ int sha1_update(uint8_t *data, size_t len, void *state)
     return 0;
 }
 
-int sha1_final(uint8_t *data, void *state)
+CCTH_INT int sha1_final(uint8_t *output, void *state)
 {
-    if(!data || !state)
+    if(output == NULL || state == NULL)
         return -1;
-    sha1_state *pstate = (sha1_state*)state;
+    sha1_state *pstate = state;
 
     /* Set the first bit to 1 (0b10000000) */
     pstate->block[pstate->block_cursor++] = 0x80;
@@ -178,7 +169,7 @@ int sha1_final(uint8_t *data, void *state)
     }
 
     uint64_t nSize = pstate->msg_length;
-    for (int i = 1; i < 8; i++)
+    for (int i = 1; i <= 8; i++)
     {
         /* Will pull the last byte of the size then remove it */
         pstate->block[SHA1_BLOCK_SIZE - i] = (uint8_t)(nSize&0xFF);
@@ -189,12 +180,20 @@ int sha1_final(uint8_t *data, void *state)
     sha1_process(state);
     pstate->block_cursor = 0;
 
-    for (int i = 0; i < SHA1_DIGEST_SIZE / sizeof(pstate->h[i]); i++)
+    for (uint8_t i = 0; i < SHA1_DIGEST_SIZE / sizeof(pstate->h[i]); i++)
     {
-        *(data++) = pstate->h[i] >> 24;
-        *(data++) = pstate->h[i] >> 16;
-        *(data++) = pstate->h[i] >> 8;
-        *(data++) = pstate->h[i];
+        *(output++) = pstate->h[i] >> 24;
+        *(output++) = pstate->h[i] >> 16;
+        *(output++) = pstate->h[i] >> 8;
+        *(output++) = pstate->h[i];
     }
     return SHA1_DIGEST_SIZE;
 }
+
+const cc_digest_ops cc_sha1_ops = {
+    .state_size = sizeof(sha1_state),
+    .init = sha1_init,
+    .update = sha1_update,
+    .final = sha1_final,
+    .final_xof = NULL,
+};
